@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Exported by architect/package@7.0.1 on 2021-08-31T15:35:22.775Z
+Description: Exported by architect/package@7.0.1 on 2021-09-02T16:04:27.850Z
 Resources:
   HTTP:
     Type: AWS::Serverless::HttpApi
@@ -38,7 +38,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: index.handler
-      CodeUri: s3://cost-test-cfn-deployments-9accb/0d95d69e3888aac12271fa833c54d59e
+      CodeUri: s3://cost-test-cfn-deployments-304ed/0d95d69e3888aac12271fa833c54d59e
       Runtime: nodejs14.x
       MemorySize: 1152
       Timeout: 5
@@ -68,6 +68,43 @@ Resources:
             Method: GET
             ApiId:
               Ref: HTTP
+  CostEventLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: index.handler
+      CodeUri: s3://cost-test-cfn-deployments-304ed/054b0c4a918ec0cff6d4233785ef7bd5
+      Runtime: nodejs14.x
+      MemorySize: 1152
+      Timeout: 5
+      Environment:
+        Variables:
+          ARC_APP_NAME: cost-test
+          ARC_CLOUDFORMATION:
+            Ref: AWS::StackName
+          ARC_ENV: staging
+          ARC_HTTP: aws_proxy
+          ARC_ROLE:
+            Ref: Role
+          NODE_ENV: staging
+          SESSION_TABLE_NAME: jwe
+          ARC_STATIC_BUCKET:
+            Ref: StaticBucket
+      Role:
+        Fn::Sub:
+        - arn:aws:iam::${AWS::AccountId}:role/${roleName}
+        - roleName:
+            Ref: Role
+      Events:
+        CostEvent:
+          Type: SNS
+          Properties:
+            Topic:
+              Ref: CostEventTopic
+  CostEventTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: Cost
+      Subscription: []
   StaticBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -114,6 +151,26 @@ Resources:
               - arn:aws:s3:::${bukkit}/*
               - bukkit:
                   Ref: StaticBucket
+      - PolicyName: ArcSimpleNotificationServicePolicy
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+            - sns:Publish
+            Resource:
+              Fn::Sub:
+              - arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${AWS::StackName}*
+              - {}
+  CostEventTopicParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Name:
+        Fn::Sub:
+        - /${AWS::StackName}/events/${event}
+        - event: cost
+      Value:
+        Ref: CostEventTopic
   StaticBucketParam:
     Type: AWS::SSM::Parameter
     Properties:
@@ -148,21 +205,20 @@ Resources:
             - {}
       Roles:
       - Ref: Role
-  AnomalyServiceMonitor:
+  MonitorNameServiceMonitor:
     Type: AWS::CE::AnomalyMonitor
     Properties:
-      MonitorName: MonitorName
+      MonitorName: MonitorNameService
       MonitorType: DIMENSIONAL
       MonitorDimension: SERVICE
-  AnomalySubscription:
+  MonitorNameAnomalySubscription:
     Type: AWS::CE::AnomalySubscription
     Properties:
-      SubscriptionName: SubscriptionName
-      Threshold: 100
+      SubscriptionName: MonitorNameSubscription
+      Threshold: 0.01
       Frequency: DAILY
       MonitorArnList:
-      - CustomAnomalyMonitorWithLinkedAccount
-      - AnomalyServiceMonitor
+      - Ref: MonitorNameServiceMonitor
       Subscribers:
       - Type: EMAIL
         Address: ryan.bethel@begin.com
@@ -178,6 +234,10 @@ Outputs:
     Description: API ID (ApiId)
     Value:
       Ref: HTTP
+  CostEventTopic:
+    Description: An SNS Topic
+    Value:
+      Ref: CostEventTopic
   BucketURL:
     Description: Bucket URL
     Value:
